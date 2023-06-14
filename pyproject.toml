@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "autonomous-driving"
+version = "0.1.0"
+description = ""
+authors = ["Aristotelis1 <aristotelis.tsoutsanis@gmail.com>"]
+readme = "README.md"
+packages = [{include = "autonomous_driving"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+python-engineio==3.13.2 
+python-socketio==4.6.0 
+Flask-SocketIO==4.3.1 
+eventlet
+
+torch
+torchvision
+numpy
+opencv
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
