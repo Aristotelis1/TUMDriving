@@ -17,6 +17,9 @@ import numpy as np
 # from io import BytesIO
 import time
 import os
+import torch
+
+from networks.resnet import resnet_model
 
 # Initialize Socket.IO server
 sio = socketio.Server()
@@ -26,17 +29,44 @@ frame_count = 0
 frame_count_save = 0
 prev_time = 0
 fps = 0
+model = None
 
 
 @sio.on("send_image")
 def on_image(sid, data):
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
     #make the variables global to calculate the fps 
     global frame_count, frame_count_save, prev_time, fps
     #print("image recieved!")
     img_data = data["image"]
     img_bytes = base64.b64decode(img_data)
-    # Decode image from base64 format，将字典里抽取出来的字符串转换为字节串类型
+    # Decode image from base64 format
     img = cv2.imdecode(np.frombuffer(img_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    img = cv2.resize(img, (160, 1080))
+    # show the recieved images on the screen
+    if img is not None and img.shape[0] > 0 and img.shape[1] > 0:
+        # cv2.namedWindow("image from unity", cv2.WINDOW_NORMAL)
+        # cv2.imshow("image from unity", img)
+        # key = cv2.waitKey(1)
+        # if key == 27:
+        #     cv2.destroyAllWindows()
+        #     return
+        img.astype(np.float32)/255
+        with torch.no_grad():
+            img = torch.from_numpy(img).permute(2,0,1)
+            img = img.to(device)
+            img = img.type(torch.float32)
+            img = torch.unsqueeze(img, 0)
+            # print(img.shape)
+            output = model(img)
+            output = torch.squeeze(output, dim=0)
+            # print("output: ", output)
+            throttle = output[0]
+            brake = output[1]
+            steering_angle = output[2]
+        send_control(steering_angle, throttle)
+    else:
+        print("Invalid image data")
 
     # # create a variable to identify every frame of image for the lately image-save
     # frame_count_save += 1
@@ -64,17 +94,6 @@ def on_image(sid, data):
     # filename = os.path.join(save_folder, f"image{frame_count_save:02d}.jpg")
     # cv2.imwrite(filename, img)
 
-    # show the recieved images on the screen
-    if img is not None and img.shape[0] > 0 and img.shape[1] > 0:
-        cv2.namedWindow("image from unity", cv2.WINDOW_NORMAL)
-        cv2.imshow("image from unity", img)
-        key = cv2.waitKey(1)
-        if key == 27:
-            cv2.destroyAllWindows()
-            return
-    else:
-        print("Invalid image data")
-
 # listen for the event "vehicle_data"
 @sio.on("vehicle_data")
 def vehicle_command(sid, data):
@@ -95,7 +114,7 @@ def vehicle_command(sid, data):
 
 @sio.event
 def connect(sid, environ):
-    # sid for identifying the client connected表示客户端唯一标识符，environ表示其连接的相关环境信息
+    # sid for identifying the client connected，environ
     print("Client connected")
     send_control(0, 0)
 
@@ -119,4 +138,11 @@ def disconnect(sid):
 app = socketio.Middleware(sio, app)
 # Connect to Socket.IO client
 if __name__ == "__main__":
+
+    print("Loading model...")
+    model = resnet_model()
+    model = torch.load("weights/resnet/resnet_15.pt", map_location=torch.device('mps'))
+    model.eval()
+
+
     eventlet.wsgi.server(eventlet.listen(("", 4567)), app)

@@ -8,15 +8,15 @@ packages = [{include = "autonomous_driving"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-python-engineio==3.13.2 
-python-socketio==4.6.0 
-Flask-SocketIO==4.3.1 
-eventlet
+python-engineio="3.13.2" 
+python-socketio="4.6.0" 
+Flask-SocketIO="4.3.1" 
+eventlet="*"
 
-torch
-torchvision
-numpy
-opencv
+torch="*"
+torchvision="*"
+numpy="*"
+opencv-python="*"
 
 
 [build-system]
