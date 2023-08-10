@@ -1,2 +1,3 @@
 .DS_Store
 autonomous_driving/data/*
+*.pyc
