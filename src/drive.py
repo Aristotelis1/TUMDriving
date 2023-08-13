@@ -20,9 +20,8 @@ import os
 import torch
 from ultralytics import YOLO
 
-from networks.resnet import resnet_model
-from networks.nvidia import NetworkNvidia
-from tests.yolov5.transforms import crop_and_get_center_image
+from networks.nvidia import NetworkNvidia, NVIDIA_IMAGE_SIZE
+from helper.augmentation import crop_and_get_center_image, crop_sky
 from helper.cv_utils import calculate_iou
 from trafficlights.classifier import estimate_label
 
@@ -57,6 +56,23 @@ def on_image(sid, data):
     # show the recieved images on the screen
     if img is not None and img.shape[0] > 0 and img.shape[1] > 0:
         img = crop_and_get_center_image(img)
+
+        # Steering angle
+        img_steering = crop_sky(img)
+        img_steering = cv2.resize(img_steering, NVIDIA_IMAGE_SIZE)
+        with torch.no_grad():
+            img_steering = torch.from_numpy(img_steering).permute(2,0,1)
+            img_steering = img_steering.to(device)
+            img_steering = img_steering.type(torch.float32)
+            img_steering = torch.unsqueeze(img_steering, 0)
+            img_steering /= 255
+            print(img_steering)
+            print(img_steering.shape)
+            output = model(img_steering)
+            steering_angle = torch.squeeze(output, dim=0)[0].item()
+            print("steering: ", steering_angle)
+        
+        # Object Detection
         img_yolo = cv2.resize(img, (360, 360), interpolation=cv2.INTER_AREA)
         start_time = time.time()
         with torch.no_grad():
@@ -118,20 +134,6 @@ def on_image(sid, data):
         prev_time = time.time()
         frame_count = 0
 
-    # # split the merged image
-    # _, width, _ = img.shape
-    # single_width = width // 3
-
-    # img1 = img[:, :single_width, :]
-    # img2 = img[:, single_width : 2 * single_width, :]
-    # img3 = img[:, 2 * single_width :, :]
-
-    # # save the images
-    # save_folder = os.path.expanduser("~/Desktop/receivedImage")
-    # os.makedirs(save_folder, exist_ok=True)
-    # filename = os.path.join(save_folder, f"image{frame_count_save:02d}.jpg")
-    # cv2.imwrite(filename, img)
-
 # listen for the event "vehicle_data"
 @sio.on("vehicle_data")
 def vehicle_command(sid, data):
@@ -185,11 +187,11 @@ if __name__ == "__main__":
 
     print("Loading model...")
     # model = resnet_model()
-    # model = NetworkNvidia()
-    # model.load_state_dict(torch.load("weights/nvidia/MSE_Steering/nvidia_50.pt", map_location=torch.device('mps')))
-    # model = model.to('mps')
+    model = NetworkNvidia()
+    model.load_state_dict(torch.load("weights/nvidia/nvidia_100.pt", map_location=torch.device('mps')))
+    model = model.to('mps')
     
-    # model.eval()
+    model.eval()
 
     # YOLOV5 Model
     # yolo = YOLO('yolov8n.pt')
