@@ -1,5 +1,8 @@
 from torch import nn
 
+NVIDIA_IMAGE_SIZE = (200, 66)
+
+
 class NetworkNvidia(nn.Module):
     """NVIDIA model used in the paper."""
 
