@@ -20,8 +20,9 @@ import os
 import torch
 from ultralytics import YOLO
 
-from networks.nvidia import NetworkNvidia, NVIDIA_IMAGE_SIZE
-from helper.augmentation import crop_and_get_center_image, crop_sky
+# from networks.nvidia import NetworkNvidia, NVIDIA_IMAGE_SIZE
+from networks.command_conditional import CommandNetwork, NetworkNvidia, NVIDIA_IMAGE_SIZE
+from helper.augmentation import crop_and_get_center_image, crop_sky, random_blur
 from helper.cv_utils import calculate_iou
 from trafficlights.classifier import estimate_label
 
@@ -57,7 +58,7 @@ def on_image(sid, data):
     if img is not None and img.shape[0] > 0 and img.shape[1] > 0:
         img = crop_and_get_center_image(img)
 
-        # Steering angle
+        # Steering angle - Command
         img_steering = crop_sky(img)
         img_steering = cv2.resize(img_steering, NVIDIA_IMAGE_SIZE)
         with torch.no_grad():
@@ -66,11 +67,14 @@ def on_image(sid, data):
             img_steering = img_steering.type(torch.float32)
             img_steering = torch.unsqueeze(img_steering, 0)
             img_steering /= 255
-            print(img_steering)
-            print(img_steering.shape)
-            output = model(img_steering)
+
+            command = torch.as_tensor(1) # 0 = left, 1 = straight, 2 = right
+            command = torch.nn.functional.one_hot(command, num_classes=3)
+            command = command.to(device)
+            output = model(img_steering, command)
+
             steering_angle = torch.squeeze(output, dim=0)[0].item()
-            print("steering: ", steering_angle)
+            # print("steering: ", steering_angle)
         
         # Object Detection
         img_yolo = cv2.resize(img, (360, 360), interpolation=cv2.INTER_AREA)
@@ -184,19 +188,18 @@ def disconnect(sid):
 app = socketio.Middleware(sio, app)
 # Connect to Socket.IO client
 if __name__ == "__main__":
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    print("Loading steering model...")
 
-    print("Loading model...")
-    # model = resnet_model()
-    model = NetworkNvidia()
-    model.load_state_dict(torch.load("weights/nvidia/nvidia_100.pt", map_location=torch.device('mps')))
-    model = model.to('mps')
-    
+    model = CommandNetwork(perception_model=NetworkNvidia())
+    model.load_state_dict(torch.load("weights/command/1508_60.pt", map_location=torch.device('cpu')))
+    model = model.to(device)
     model.eval()
 
     # YOLOV5 Model
-    # yolo = YOLO('yolov8n.pt')
-    yolo = torch.hub.load('ultralytics/yolov5', 'yolov5s')
-    yolo = yolo.to("mps")
+    print("Loading object detection model...")
+    yolo = torch.hub.load('ultralytics/yolov5', 'yolov5s', force_reload=True)
+    yolo = yolo.to(device)
     yolo.conf = 0.50  # NMS confidence threshold
     yolo.classes = [2, 5, 9]  # (optional list) filter by class, i.e. = [0, 15, 16] for COCO
 
